@@ -43,18 +43,34 @@ Returns a list of row names on a given page of a pdf.
 return: List of row names
 """
 def return_row_names(string):
-	found = re.search("COST(.+?)Prior",string, flags=re.DOTALL)
+	found = re.search("Total\nCost(.+?)A\.",string,flags=re.DOTALL)
 	group = found.group(1)
-	rows = group.split("\n")
-	rows = rows[1:]
-	#for i in range(0,rows.length()):
-	# for i in range(0,len(rows)):
-	# 	if "Quantity" in rows[i]:
-	# 		if rows[i-1][0] != '6':
-	# 			rows[i-2:i-1] = [''.join(rows[i-2:i-1])]
+	group = group.split("\n")
+	rows = []
+	#print(group)
+	for i in range(len(group)):
+		# print(group[i])
+		if "Total Program Element" in group[i]:
+			rows.append(group[i])
+			continue
+		if "Quantity" in group[i]:
+			rows.append(group[i])
+			continue
+		try:
+			f = re.search("6(.+?):", group[i], flags=re.DOTALL).group(1)
 
+			s = ''
+			#rows.append(group[i])
+			count = i
+			while (count < len(group)-1 and group[count] != ''):
+				s += group[count] + "\n"
+				count = count + 1
+			if count != i:
+				s = s[:-1]
+			rows.append(s)
+		except Exception as e:
+			continue
 
-	rows = [row for row in rows if row != ""]
 	return rows
 
 """
@@ -96,7 +112,6 @@ def parse_table_string(string,year):
 			#s = s.replace(u'\xao',u'')
 		new_str = unicodedata.normalize("NFKD", s) #normalize string
 	col_list = generate_col_names(year)
-	#table_dict = {cell, col_name for cell, col_name in cell_array, col_list}
 	dictionary = dict(zip(col_list, cell_array)) 
 	return dictionary
 
@@ -116,67 +131,64 @@ def extract_table(rows,text,year=2018):
 	table_dict = {}
 	try: 
 		for i in range(0,len(rows)):
-			#print(rows[i])
-			if '(' in rows[i]: # If an open parentheses is present in string, re won't accept this. Must get rid of parentheses.
-				index = rows[i].index('(')
-				#rows[i] = rows[i][0:index] + '/' + rows[i][index:]
-				string = rows[i][index+1:]
-				index2 = rows[i+1].index(')')
-				string_2nd = rows[i+1][:index2-1]
-				found = re.search(string + '(.+?)' + string_2nd,text,flags=re.DOTALL)
-				a += found.group(1)
-				a += "\n"
+			# print(rows)
+			search_string = ''
+			search_2ndstring = ''
+			if "\n" in rows[i]:
+				index = rows[i].index('\n')
+				search_string = rows[i][:index].replace("\n","")
+				search_2ndstring = rows[i][index:].replace("\n","")			
+			elif i == len(rows)-1:
+				search_string = rows[i]
+				search_2ndstring = 'A.'
+				found = re.search(re.escape(search_string) + '(.+?)' + ('A\.|Note'), text, flags = re.DOTALL)
 				dictionary = parse_table_string(found.group(1),year)
-				print(dictionary)
-				table_dict[rows[i] + rows[i+1]] = (dictionary)
-				#print(table_dict)
-				#print(found.group(1))
-			elif ')' in rows[i]: #If close parentheses is present, string not needed. Continue.
-				continue
-			elif i == len(rows)-1: #If i is last string, then find data all the way up to divider A. 
-				found = re.search(rows[i] + '(.+?)A.', text, flags = re.DOTALL)
-				a += found.group(1)
-				a += "\n"
-				dictionary = parse_table_string(found.group(1),year)
-				print(dictionary)
-				table_dict[rows[i]] = (dictionary)
-				#print(table_dict)
-				#print(found.group(1))
-				break
-			else:	
-				if (i < len(rows)-1):
-					if (i > 0 and rows[i-1][0] == '6' and rows[i][0] != '6' and rows[i+1][0] == '6') or (i > 0 and i < len(rows)-2 and rows[i-1][0] == '6' and rows[i][0] != '6' and rows[i+1][0] != '6' and rows[i+2][0] == '6'):
-						print("HI")
-						continue #Hacky
-					elif i > 1 and i < len(rows)-2 and rows[i-2][0] == '6' and rows[i-1][0] != '6' and rows[i][0] != '6':
-						continue
-					string_2nd = rows[i+1]
-					key_string = ''
-					if '(' in rows[i+1]: #row has open parentheses, search past open parentheses
-						index = rows[i+1].index('(')
-						string_2nd = rows[i+1][:index-1]
-					count = i + 1
-					while ((count < len(rows)-1) and rows[count][0] != '6'):
-						key_string = key_string + " " + rows[count]
-						count = count + 1
-					found = re.search(rows[i] + '(.+?)' + string_2nd,text, flags=re.DOTALL)
-					a += found.group(1)
-					# table_dict[rows[i] + key_string] = found.group(1)
-					a += "\n"
-					dictionary = parse_table_string(found.group(1),year)
-					print(dictionary)
-					table_dict[rows[i] + key_string] = dictionary
-					#print(table_dict)
-					#print(parse_table_string(found.group(1),year))
-					#print(found.group(1))
+				table_dict[rows[i]] = dictionary
+				continue #Do not want to exit loop here- re.escape messes up A.|Note
+			else:
+				search_string = rows[i]
+				search_2ndstring = rows[i+1]
+				if '\n' in rows[i+1]:
+					index = rows[i+1].index('\n')
+					search_2ndstring = rows[i+1][:index].replace("\n","")
+				
+			found = re.search(re.escape(search_string) + '(.+?)' + re.escape(search_2ndstring), text, flags=re.DOTALL)
+			dictionary = parse_table_string(found.group(1),year)
+			table_dict[rows[i].replace('\n',' ')] = dictionary
+
 	except Exception as e:
 		print(e)
 		print("Table could not be parsed.")
-
-	print("TEST" + str(table_dict))
 	return a, table_dict
 
+def search_for_desc(desc):
+	found = re.search('A. Mission Description and Budget Item Justification(.+?)(PE 0|B. Program|B. Accomplishments)', desc, re.DOTALL)
+	return found.group(1)
 
+
+def parse_year_from_filename(filename):
+	subprocess.call(['pdftotext',filename,'o2.txt','-f','1','-l','1'])
+	data2 = ''
+	with open('o2.txt', 'r') as myfile:
+			data2=myfile.read()
+	found = re.search('Fiscal Year \(FY\) (....)',data2, re.DOTALL)
+	return int(found.group(1))
+
+def return_data(page1, page2, filename):
+	subprocess.call(['pdftotext',filename,'o2.txt','-layout','-f',str(page1 + 1),'-l',str(page2 + 1)])
+	data2 = ''
+	with open('o2.txt', 'r') as myfile:
+		data2=myfile.read()
+	return data2
+
+def return_R2_metadata(data):
+	found = re.search('\(Number/Name\)\s(.+?)(PE.+?)Prior',data, re.DOTALL)
+	appropriation = found.group(1).strip()
+	program_element = found.group(2)
+	if '\n' in program_element:
+		appropriation += ' ' + program_element.split('\n')[1]
+		program_element = program_element.split('\n')[0]
+	return appropriation, program_element
 
 """
 Writes a given page's text to a an output file. This file can later be read from and stored as JSON.
@@ -185,33 +197,87 @@ Writes a given page's text to a an output file. This file can later be read from
 @param filename: filename of PDF to convert
 """
 def write_page_text(page1, page2,filename=''):
-
-	# text = convert('afd2018.pdf', pages=[344])
 	with open('newfile.txt', 'w') as workfile:
+		set = False #bool to help decide which pages should be searched
+		count = 0
 		for i in range(page1,page2):
-			text = convert(filename, pages=[i])
-			try: 
-				rows = return_row_names(text)
-			except Exception as e:
-				print("No table")
-				continue
-		# AFD-150309-012.pdf
-			# subprocess.call(['pdftotext','afd2018.pdf','o.txt','-layout','-f','345','-l','345'])
-			subprocess.call(['pdftotext',filename,'o.txt','-layout','-f',str(i + 1),'-l',str(i + 1)])
-			data = ''
-			with open('o.txt', 'r') as myfile:
-		   		data=myfile.read().replace('\n', '')
-			s, table_dict = extract_table(rows,data,year=2016)
-			#print('HIIII' + s)
-			#print(table_dict)
-			workfile.write(str(table_dict))
-			workfile.write('\n')
+			if (set):
+				count += 1
+				set = False
+				try:
+					subprocess.call(['pdftotext',filename,'o2.txt','-f',str(i + 1),'-l',str(i + 1)]) 
+					data2 = ''
+					with open('o2.txt', 'r') as myfile:
+			   			data2=myfile.read()
+
+					rows = return_row_names(data2)
+				except Exception as e:
+					print(e)
+					print("No table")
+					continue
+
+				subprocess.call(['pdftotext',filename,'o.txt','-layout','-f',str(i + 1),'-l',str(i + 1)]) #this could possibly be improved (don't need to call twice)
+				data = ''
+				with open('o.txt', 'r') as myfile:
+			   		data=myfile.read().replace('\n', '')
+
+				s, table_dict = extract_table(rows,data,year=parse_year_from_filename(filename))
+				
+				try: 
+					table_dict['A. Mission Description and Budget Item Justification'] = search_for_desc(data)
+					appropriation, program_element = return_R2_metadata(return_data(i,i,filename))
+					table_dict['Appropriation/Budget Activity'] = appropriation
+					table_dict['R-1 Program Element (Number/Name)'] = program_element
+				except Exception as e:
+					print(e)
+					print("cannot extract desc")
+
+				workfile.write(str(table_dict))
+				workfile.write('\n')
+			else:
+				subprocess.call(['pdftotext',filename,'o2.txt','-f',str(i + 1),'-l',str(i + 1)])
+				data2 = ''
+				with open('o2.txt', 'r') as myfile:
+			   			data2=myfile.read()
+
+				try: 
+					found = re.search('THIS PAGE(.+?)LEFT BLANK', data2, re.DOTALL)
+					found.group(1) #Will throw an error if not found
+
+					set = True
+				except Exception as e:
+					try: #use to check if page is last page and next page is beginning of next r2
+						found = re.search('Page (..) of (..)', data2, re.DOTALL)
+						if (found.group(1).isdigit()):
+							print('hiii')
+							page1 = found.group(1)
+							page2 = found.group(2)
+							if page1 == page2:
+								subprocess.call(['pdftotext',filename,'o2.txt','-f',str(i + 2),'-l',str(i + 2)])
+								data2 = ''
+								with open('o2.txt', 'r') as myfile:
+								   	data2=myfile.read()
+								found = re.search('Appropriation/Budget Activity(.+?)UNCLASSIFIED',data2, flags=re.DOTALL).group(1)
+								set = True
+					except Exception as e:
+						continue
+
+
 		workfile.close()
+		print(count)
 
 
-#print(generate_col_names(2018))
-#print
-write_page_text(70,71,filename='AFD-150309-012.pdf')
+
+# data = return_data(112,113,'afd2018.pdf')
+# group1, group2 = return_R2_metadata(data)
+# print(group1)
+# print(group2)
+# found = re.search('\(Number/Name\)\s(.+?)(PE.+?)Prior',data, re.DOTALL)
+# print(found.group(1))
+# print(found.group(2))
+
+
+write_page_text(1,430,filename='afd2018.pdf')
 
 # print(text)
 # print(repr(text))
