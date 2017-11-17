@@ -141,12 +141,11 @@ row name.
 @param year: year of converted PDF (should be in PDF filename, for example, 'AFD-150309-012.pdf' would be year=2016))
 return: extracted table information as a dictionary. Dictionary can be used to be placed in JSON format.
 """
-def extract_table(rows,text,year=2018, page=0, filename=''): 
+def extract_table(rows,text,year=2018, page=0, filename='',early_pdf=False): 
 	a = ""
 	table_dict = {}
 	try: 
 		for i in range(0,len(rows)):
-			# print(rows)
 			search_string = ''
 			search_2ndstring = ''
 			if "\n" in rows[i]:
@@ -228,54 +227,81 @@ def pre_2010(page1,page2,filename=''):
 	found = re.search('Complete(.+?)\n(In|Note|\(U\)|This|THIS)',data, re.DOTALL)
 	pattern = re.compile('([0-9]*)[ ]+([A-Za-z\(\)\-\/\& ]+)([0-9].+?)\n', re.DOTALL)
 	text = found.group(0)
-	#print(text)
 	table_dict = {}
 
 
 	for group in re.findall(pattern,text):
-		#print(group)
 		if (len(group) > 3):
 			group = group[:0] + group[2:] 
 		group0 = group[0]
 		if group[0] != '':
 			group0 = group0 + ' '
 		table_dict[group0 + group[1].strip()] = parse_table_string(group[2],parse_year_from_filename(filename))
-	print(table_dict)
+		table_dict[group0 + group[1].strip()].update(get_item_desc(group[0],page1,data,filename,early_pdf=True))
 	return table_dict
 
-def get_item_desc(item, page, data, filename):
-	found = re.search('Page (.|..) of (.|..)', data , re.DOTALL)
-	pageNo = found.group(2)
-	#print(pageNo)
+def get_item_desc(item, page, data, filename, early_pdf=False):
+	#print(repr(data))
+	try:
+		found = re.search('Page (.|..) of (.|..)', data , re.DOTALL)
+		pageNo = found.group(2)
+	except Exception as e:
+		found = re.search('[0-9][0-9]\-([0-9]+) of [0-9][0-9]\-([0-9]+)\s',data, re.DOTALL)
+		pageNo = found.group(2)
+	
 	orig_item = item
 	try:
-		num = re.search('\s*([0-9]+):', item, re.DOTALL)
+		num = re.search('\s*([0-9]+):*', item, re.DOTALL)
 		item = num.group(1)
 	except Exception as e:
-		return ''
+		return {'Budget Item Description' : ''}
 
 	full_data = return_data(page+1, page + int(pageNo), filename, without_layout=True)
 	#print(full_data)
-	find_desc = re.search(item + '.+?A\.\sMission\sDescription\sand\sBudget\sItem\sJustification(.+?)(B\.\sAccomplishments|B\.\sProgram)', full_data.replace('\n', ' '), re.DOTALL).group(1).replace('\n',' ')
+	if not early_pdf:
+		find_desc = re.search(item + '.+?A\.\sMission\sDescription\sand\sBudget\sItem\sJustification(.+?)(B\.\sAccomplishments|B\.\sProgram)', full_data.replace('\n', ' '), re.DOTALL).group(1).replace('\n',' ')
+	else:
+		find_desc = re.search(item + '.+?A\.\sMission\sDescription(.+?)(B\.\sAccomplishments|B\.\sProgram|\(U\))', full_data.replace('\n', ' '), re.DOTALL).group(1).replace('\n',' ')
 	#print("Desc:" + find_desc)
 	return {'Budget Item Description' : find_desc}
 
-def get_plans(page, filename, data):
-	found = re.search('Page (.|..) of (.|..)', data, re.DOTALL)
-	pageNo = found.group(2)
+def get_plans(page, filename, data, early_pdf=False):
+	try: 
+		found = re.search('Page (.|..) of (.|..)\s', data, re.DOTALL)
+		pageNo = found.group(2)
+	except Exception as e:
+		found = re.search('[0-9][0-9]\-([0-9]+) of [0-9][0-9]\-([0-9]+)\s',data, re.DOTALL) #Used in cases for some older PDF Files, pages displayed differently
+		pageNo = found.group(2)
+	
 	#print(pageNo)
 	full_data = return_data(page, page + int(pageNo)-1, filename, without_layout=True)
 	year = parse_year_from_filename(filename)
 	#print(full_data)
 	#print(year)
-	pattern = re.compile('le:(.+?)\n.+?Description: (.+?)FY ' + str(year-1) + ' Accomplishments:(.+?)FY ' + str(year) + ' Plans:(.+?)FY ' + str(year+1) + ' Plans:(.+?)(Tit|Accomplishments)',re.DOTALL)
+	if not early_pdf:
+		pattern = re.compile('le:(.+?)\n.+?Description: (.+?)FY ' + str(year-1) + ' Accomplishments:(.+?)FY ' + str(year) + ' Plans:(.+?)FY ' + str(year+1) + ' Plans:(.+?)(Tit|Accomplishments)',re.DOTALL)
+	elif parse_year_from_filename(filename) < 2004:
+		pattern = re.compile('\(U\) FY ' + str(year-1) + '\(\$ in Thousands\)(.+?)(Project|FY)',re.DOTALL)
+		#print(full_data)
+	else:
+		#print(full_data)
+		pattern = re.compile('\(U\) B\. Accomplishments/Planned Program \(\$ in Millions\)(.+?)(Project)',re.DOTALL)
 	R2_list = []
 	for m in re.findall(pattern, full_data):
 		table_dict = {}
-		#print('hi')
+		print('hiiiiiiiiiiiiiiiiiiiiiiiiiiiiii')
 		count = year-1
 		clean_data = ''
-		table_dict['Title'] = m[0]
+		if not early_pdf:
+			table_dict['Title'] = m[0]
+		else:
+			string = m[0].replace('\n',' ')
+			table_dict['FY ' + str(count)] = string.replace('(U)',' ')
+			print(string.replace('(U)',''))
+			count = count + 1
+			print("Hdfas;ljfasdj;fasjf;asdjfl;asddfjasfdaslfjlasdjfdljflkfd")
+			R2_list.append(table_dict)
+			continue
 		for group in m:
 			#print(i)
 			#sprint(group + "hi")
@@ -288,12 +314,8 @@ def get_plans(page, filename, data):
 				pattern2 = re.compile('(.+?)PE.+?C\. Accomplishments/Planned Programs \(. in Millions\)(.+?)FY',re.DOTALL)
 				found = re.search(pattern2, group)
 				clean_data = found.group(1) + found.group(2)
-				#print(clean_data + "HMM")
-				#print(found.group(1) + found.group(2))
 			else:
-				#print('')
 				clean_data = group
-				#print(clean_data + "hi")
 			if count == year-1:
 				table_dict[str(count) + ' Accomplishments'] = clean_data.replace('\n',' ')	
 			else:
@@ -319,6 +341,8 @@ def write_page_text(page1, page2,filename='', write_file='newfile.txt', path_dir
 	with open(os.getcwd() + '/' + path_dir + '/' + write_file, 'w') as workfile:
 		set = False #bool to help decide which pages should be searched
 		count = 0
+		final_table = {}
+		R2_list = []
 		for i in range(page1,page2):
 			if (set):
 				count += 1
@@ -343,7 +367,7 @@ def write_page_text(page1, page2,filename='', write_file='newfile.txt', path_dir
 					with open('o.txt', 'r') as myfile:
 				   		data=myfile.read().replace('\n', '')
 
-					s, table_dict = extract_table(rows,data,year=parse_year_from_filename(filename), page=i,filename=filename)
+					s, table_dict = extract_table(rows,data,year=parse_year_from_filename(filename), page=i,filename=filename,early_pdf=early_pdf)
 				else:
 					try:
 						table_dict = pre_2010(i,i, filename)
@@ -365,16 +389,19 @@ def write_page_text(page1, page2,filename='', write_file='newfile.txt', path_dir
 					table_dict['Appropriation/Budget Activity'] = appropriation
 					table_dict['R-1 Program Element (Number/Name)'] = program_element
 					try:
-						table_dict['Accomplishments/Planned programs'] = get_plans(i, filename, return_data(i,i,filename,without_layout=True))
-					except:
+						table_dict['Accomplishments/Planned programs'] = get_plans(i, filename, return_data(i,i,filename,without_layout=True),early_pdf=early_pdf)
+					except Exception as e:
+						print(e)
 						print("Cannot get plans")	
 				except Exception as e:
 					print(e)
 					#print(repr(return_data(i,i,filename,without_layout=True)))
 					print("cannot extract desc")
 
-				json.dump(table_dict, workfile)
-				workfile.write(',\n')
+			
+				R2_list.append(table_dict)
+				# json.dump(table_dict, workfile)
+				# workfile.write(',\n')
 				#workfile.write(str(table_dict))
 				#workfile.write('\n')
 				
@@ -408,7 +435,8 @@ def write_page_text(page1, page2,filename='', write_file='newfile.txt', path_dir
 					except Exception as e:
 						continue
 
-
+		final_table['R2s'] = R2_list
+		json.dump(final_table,workfile)			
 		workfile.close()
 
 
